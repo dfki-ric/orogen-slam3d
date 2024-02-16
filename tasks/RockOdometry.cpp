@@ -20,7 +20,8 @@ RockOdometry::~RockOdometry()
 void RockOdometry::handleNewVertex(IdType vertex)
 {
 	// Add odometry transform to previous vertex
-	timeval stamp = mGraph->getVertex(vertex).measurement->getTimestamp();
+	timeval stamp = mGraph->getMeasurement(vertex)->getTimestamp();
+	
 	Transform currentOdometricPose = getPose(stamp);
 	if(mLastVertex > 0)
 	{
