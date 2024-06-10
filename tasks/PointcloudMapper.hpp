@@ -33,6 +33,7 @@ namespace slam3d
 		
 		// Callbacks
 		virtual bool setLog_level(boost::int32_t value);
+		virtual void scanTransformerCallback(const base::Time &ts, const base::samples::Pointcloud &scan_sample);
 		void transformerCallback(const base::Time &time);
 
 		// Internal methods
@@ -48,6 +49,7 @@ namespace slam3d
 		// Members
 		slam3d::Clock* mClock;
 		slam3d::Logger* mLogger;
+		slam3d::MeasurementStorage* mStorage;
 		slam3d::Graph* mGraph;
 		slam3d::Mapper* mMapper;
 		slam3d::PointCloudSensor* mPclSensor;
