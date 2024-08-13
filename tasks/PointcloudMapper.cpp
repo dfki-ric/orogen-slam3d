@@ -534,6 +534,13 @@ void PointcloudMapper::updateHook()
 	{
 		PointcloudMapperBase::updateHook();
 
+		// Check if we already received data and have a valid time
+		if(mCurrentTime.isNull())
+		{
+			mLogger->message(WARNING, "Current time is null, not sending transforms.");
+			return;
+		}
+
 		// Send the calculated transforms
 		base::samples::RigidBodyState rbs;
 		rbs.invalidateCovariances();
