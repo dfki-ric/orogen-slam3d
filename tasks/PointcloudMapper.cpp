@@ -403,7 +403,7 @@ void PointcloudMapper::scanTransformerCallback(const base::Time &ts, const base:
 	// Check if we have to set start pose from odometry
 	if(!mStartPoseInitialized)
 	{
-		Transform startPose;
+		Transform startPose = Transform::Identity();
 		Eigen::Affine3d affine = Eigen::Affine3d::Identity();
 		try
 		{
