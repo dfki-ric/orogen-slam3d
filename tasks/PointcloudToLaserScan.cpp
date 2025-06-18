@@ -20,10 +20,13 @@ void PointcloudToLaserScan::convertPointCloudToLaserScan(base::samples::Pointclo
     // if they are within the specified height and range limits.
     // The angle of each point will be calculated based on its position in the pointcloud.
 
-    base::samples::Pointcloud cropped_cloud;
-    std::vector<double> range_data_double; // temporary vector to hold the ranges
+    // The LaserScan datatype and visualization in Rock uses uint32 and the data units are in millimeter(mm). That is why there are some variables names _mm which are in millimeters. 
 
-    LOG_DEBUG("Max height: %f, Min height: %f, Max range: %f, Min range: %f", max_height, min_height, range_max, range_min);
+    base::samples::Pointcloud cropped_cloud;
+
+    std::uint32_t range_max_mm = static_cast<uint32_t>(range_max*1000); // convert max range value to mm
+
+    LOG_DEBUG("All values are in (m); Max height: %f, Min height: %f, Max range: %f, Min range: %f", max_height, min_height, range_max, range_min);
 
     if((max_height < min_height)){
         LOG_ERROR("Max height is less than Min height");
@@ -37,28 +40,48 @@ void PointcloudToLaserScan::convertPointCloudToLaserScan(base::samples::Pointclo
 
     else{
 
-    // size for range_data = (max_angle - min_angle) / angle_increment
-    int range_size = std::ceil((angle_max - angle_min)/angle_increment);
-    range_data.clear();
-    range_data.resize(range_size);
+        // size for range_data = (max_angle - min_angle) / angle_increment
+        int range_size = std::ceil((angle_max - angle_min)/angle_increment);
+        range_data.clear();
+        range_data.resize(range_size);
 
-    range_data_double.clear();
-    range_data_double.resize(range_size);
-
-    //use max value for scans with no obstacles
-    for (size_t i = 0; i < range_data_double.size(); ++i) {
-        range_data_double[i] = range_max; // TODO: check if inf is possible here
-    }
+        //use max value for scans with no obstacles
+        for (size_t i = 0; i < range_data.size(); ++i) {
+            range_data[i] = range_max_mm; // TODO: check if inf is possible here
+        }
+        
         for(std::vector<base::Vector3d>::const_iterator it = pointcloud.points.begin(); it < pointcloud.points.end(); ++it)
         {
-            double sq_distance = ((*it)[0] * (*it)[0]) + ((*it)[1] * (*it)[1]) + ((*it)[2] * (*it)[2]); 
             // if height(z value) of the point is outside the [min_height, max_height] then skip the point
             if ( ((*it)[2]) > max_height || ((*it)[2]) <= min_height )
                 continue;
-            
+
+            double sq_distance = ((*it)[0] * (*it)[0]) + ((*it)[1] * (*it)[1]) + ((*it)[2] * (*it)[2]); 
             // square computation is computationally costly so squared distance is compared with squared range
             if ( (sq_distance > range_max*range_max) || ( sq_distance < range_min*range_min) )
                 continue;
+
+            double current_angle = atan2( (*it)[1] ,(*it)[0] );
+            double current_range = hypot( (*it)[1], (*it)[0] );
+            int index = (current_angle - angle_min) / angle_increment;
+
+            if(index < 0 || index >= range_data.size()){
+                LOG_DEBUG("The index value %d is out of range for the scan_range array with size %d", (index, range_data.size()));
+                LOG_ERROR("Index out of range");
+            }
+            else{
+
+                std::uint32_t current_range_mm = static_cast<uint32_t>(current_range * 1000); // convert the current range from meter to millimeters
+
+                // add the closest obstacle distance for a given angle 
+                if(current_range_mm < range_data[index]){
+                    range_data[index] = current_range_mm;
+                }
+                else{
+                    LOG_DEBUG("Current range value %f mm is larger than existing range value %f mm at the angle %f rad", (current_range_mm, range_data[index], current_angle))
+                    continue;
+                }
+            }
             cropped_cloud.points.push_back(*it);
         }
     }
@@ -69,35 +92,8 @@ void PointcloudToLaserScan::convertPointCloudToLaserScan(base::samples::Pointclo
     }
     else{
         // Log the number of points in the cropped cloud
-        LOG_DEBUG("Cropped cloud has %d points within the specified height and range limits.", cropped_cloud.points.size());
-    }
-
-    _debug_cropped_cloud.write(cropped_cloud);
-
-    // Find the range of points using x,y of the point
-    // move the following logic into the previous loop to save time
-    for(std::vector<base::Vector3d>::const_iterator it = cropped_cloud.points.begin(); it < cropped_cloud.points.end(); ++it)
-    {
-        // theta = tan_inv(x/y) 
-        double current_angle = atan2( (*it)[1] ,(*it)[0] );
-        double current_range = sqrt( (*it)[1] * (*it)[1] + (*it)[0] * (*it)[0] );
-
-        int index = (current_angle - angle_min) / angle_increment;
-
-        if(current_range < range_data_double[index]){
-            range_data_double[index] = current_range;
-        }
-        else
-        {
-            LOG_DEBUG("Current range %f is larger than existing range %f at the angle %f", (current_range, range_data_double[index], current_angle))
-            continue;
-        }
-    }
-
-    // Convert the ranges from meters to millimeters
-    for (size_t i = 0; i < range_data_double.size(); ++i)
-    {
-        range_data[i] = static_cast<uint32_t>(range_data_double[i] * 1000); // convert to millimeters and store in range_data
+        LOG_DEBUG("Cropped point cloud has %d points within the specified height and range limits.", cropped_cloud.points.size());
+        _debug_cropped_cloud.write(cropped_cloud);
     }
 
 }
@@ -146,17 +142,17 @@ void PointcloudToLaserScan::updateHook()
         constructed_scan_ptr->reset();
     }
     
-    constructed_scan_ptr->time = pointcloud.time;
-    constructed_scan_ptr->start_angle = angle_min; // start at 90 degrees and scan anticlockwise
-    constructed_scan_ptr->angular_resolution = angle_increment;
-    constructed_scan_ptr->minRange = range_min*1000;
-    constructed_scan_ptr->maxRange = range_max*1000;
-    constructed_scan_ptr->speed = 6.0; // TODO: this is not actual value, used for visualization purposes
     std::vector<uint32_t> range_data; // ranges of the scan, data to be added to the scan
-
     convertPointCloudToLaserScan(pointcloud, range_data);
 
-    // validate the length of the range_data vector and 
+    double speed = 30 * (angle_max - angle_min); // 30 scans per second so the unit is rad/sec
+
+    constructed_scan_ptr->time = pointcloud.time;
+    constructed_scan_ptr->start_angle = angle_min; // start at minimum angle value and scan anticlockwise
+    constructed_scan_ptr->angular_resolution = angle_increment;
+    constructed_scan_ptr->minRange = range_min*1000; // Convert range to millimeter
+    constructed_scan_ptr->maxRange = range_max*1000; // Convert range to millimeter
+    constructed_scan_ptr->speed = speed; // This is not actual sensor value, for visualiazation purposes
     constructed_scan_ptr->ranges = range_data;
 
     // write the constructed scan to the output port
@@ -174,4 +170,10 @@ void PointcloudToLaserScan::stopHook()
 void PointcloudToLaserScan::cleanupHook()
 {
     PointcloudToLaserScanBase::cleanupHook();
+
+    if (constructed_scan_ptr != nullptr) {
+        delete constructed_scan_ptr;
+        constructed_scan_ptr = nullptr;
+    }
+
 }
