@@ -20,12 +20,12 @@
 using namespace slam3d;
 
 PointcloudMapper::PointcloudMapper(std::string const& name)
-    : PointcloudMapperBase(name)
+    : PointcloudMapperBase(name),localize_only(false)
 {
 }
 
 PointcloudMapper::PointcloudMapper(std::string const& name, RTT::ExecutionEngine* engine)
-    : PointcloudMapperBase(name, engine)
+    : PointcloudMapperBase(name, engine),localize_only(false)
 {
 }
 
@@ -160,9 +160,16 @@ void PointcloudMapper::sendPointcloud(const VertexObjectList& vertices)
 	_cloud.write(mapCloud);
 }
 
-void PointcloudMapper::handleNewScan(const VertexObject& scan)
-{
-	addScanToMap(castToPointcloud(mMapper->getGraph()->getMeasurement(scan.measurementUuid)), scan.correctedPose);
+void PointcloudMapper::handleNewScan(const VertexObject& scan) {
+	PointCloudMeasurement::Ptr pcm;
+	try {
+		pcm = castToPointcloud(mMapper->getGraph()->getMeasurement(scan.measurementUuid));
+	} catch(const BadMeasurementType &e) {
+		//ignore invalid clouds
+	}
+	if (pcm) {
+		addScanToMap(pcm, scan.correctedPose);
+	}	
 }
 
 void PointcloudMapper::addScanToMap(PointCloudMeasurement::Ptr scan, const Transform& pose)
@@ -186,7 +193,16 @@ void PointcloudMapper::rebuildMap(const VertexObjectList& vertices)
 	boost::shared_lock<boost::shared_mutex> guard(mGraphMutex);
 	for(VertexObjectList::const_iterator v = vertices.begin(); v != vertices.end(); ++v)
 	{
-		addScanToMap(castToPointcloud(mMapper->getGraph()->getMeasurement(v->measurementUuid)), v->correctedPose);
+
+		PointCloudMeasurement::Ptr pcm;
+		try {
+			pcm = castToPointcloud(mMapper->getGraph()->getMeasurement(v->measurementUuid));
+		} catch(const BadMeasurementType &e) {
+			//ignore invalid clouds
+		}
+		if (pcm) {
+			addScanToMap(pcm, v->correctedPose);
+		}
 	}
 	timeval finish = mClock->now();
 	int duration = finish.tv_sec - start.tv_sec;
@@ -533,6 +549,15 @@ void PointcloudMapper::updateHook()
 	try
 	{
 		PointcloudMapperBase::updateHook();
+
+		
+		if (_localize_only.read(localize_only) == RTT::NewData) {
+			if (localize_only) {
+				mStorage->disable();
+			} else {
+				mStorage->enable();
+			}
+		}
 
 		// Check if we already received data and have a valid time
 		if(mCurrentTime.isNull())
