@@ -65,7 +65,7 @@ PointCloudMeasurement::Ptr slam3d::castToPointcloud(Measurement::Ptr m)
 	PointCloudMeasurement::Ptr pcm = boost::dynamic_pointer_cast<PointCloudMeasurement>(m);
 	if(!pcm)
 	{
-		throw BadMeasurementType();
+		//throw BadMeasurementType();
 	}
 	return pcm;
 }
