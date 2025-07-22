@@ -17,15 +17,20 @@
 #include <pcl/common/transforms.h>
 #include <pcl/io/ply_io.h>
 
+#ifdef USE_DATABASES
+    #include <slam3d/graph/neo4j/Neo4jGraph.hpp>
+    #include <slam3d/measurements/redis/RedisMeasurementStorage.hpp>
+#endif
+
 using namespace slam3d;
 
 PointcloudMapper::PointcloudMapper(std::string const& name)
-    : PointcloudMapperBase(name),localize_only(false)
+    : PointcloudMapperBase(name)
 {
 }
 
 PointcloudMapper::PointcloudMapper(std::string const& name, RTT::ExecutionEngine* engine)
-    : PointcloudMapperBase(name, engine),localize_only(false)
+    : PointcloudMapperBase(name, engine)
 {
 }
 
@@ -160,16 +165,9 @@ void PointcloudMapper::sendPointcloud(const VertexObjectList& vertices)
 	_cloud.write(mapCloud);
 }
 
-void PointcloudMapper::handleNewScan(const VertexObject& scan) {
-	PointCloudMeasurement::Ptr pcm;
-	try {
-		pcm = castToPointcloud(mMapper->getGraph()->getMeasurement(scan.measurementUuid));
-	} catch(const BadMeasurementType &e) {
-		//ignore invalid clouds
-	}
-	if (pcm) {
-		addScanToMap(pcm, scan.correctedPose);
-	}	
+void PointcloudMapper::handleNewScan(const VertexObject& scan)
+{
+	addScanToMap(castToPointcloud(mMapper->getGraph()->getMeasurement(scan.measurementUuid)), scan.correctedPose);
 }
 
 void PointcloudMapper::addScanToMap(PointCloudMeasurement::Ptr scan, const Transform& pose)
@@ -193,16 +191,7 @@ void PointcloudMapper::rebuildMap(const VertexObjectList& vertices)
 	boost::shared_lock<boost::shared_mutex> guard(mGraphMutex);
 	for(VertexObjectList::const_iterator v = vertices.begin(); v != vertices.end(); ++v)
 	{
-
-		PointCloudMeasurement::Ptr pcm;
-		try {
-			pcm = castToPointcloud(mMapper->getGraph()->getMeasurement(v->measurementUuid));
-		} catch(const BadMeasurementType &e) {
-			//ignore invalid clouds
-		}
-		if (pcm) {
-			addScanToMap(pcm, v->correctedPose);
-		}
+		addScanToMap(castToPointcloud(mMapper->getGraph()->getMeasurement(v->measurementUuid)), v->correctedPose);
 	}
 	timeval finish = mClock->now();
 	int duration = finish.tv_sec - start.tv_sec;
@@ -292,6 +281,7 @@ bool PointcloudMapper::configureHook()
 
 	setLog_level(_log_level);
 
+
 	// Create all internal objects
 	mSolver = new G2oSolver(mLogger);
 	mPatchSolver = new G2oSolver(mLogger);
@@ -299,9 +289,37 @@ bool PointcloudMapper::configureHook()
 	mPclSensor = new PointCloudSensor("LaserScanner", mLogger);
 	mPclSensor->setPatchSolver(mPatchSolver);
 
-	mStorage = new MeasurementStorage;
 
-	mGraph = new BoostGraph(mLogger, mStorage);
+    if (_use_databases.value()) {
+        #ifdef USE_DATABASES
+            std::cout << "connecting neo4j: " << conf.neo4jConfig.toString() << std::endl;
+            std::cout << "connecting redis: " << conf.redisConfig.toString() << std::endl;
+			
+			slam3d::RedisMeasurementStorage* redisdb = new RedisMeasurementStorage(_redis_config.value().host, _redis_config.value().port,_redis_config.value().cacheSize,_redis_config.value().useBinaryArchive);
+	        mStorage = std::dynamic_cast<slam3d::MeasurementStorage*>(redisdb);
+
+
+			Neo4jGraph::Server neoconf (_neo4j_config.value().host, _neo4j_config.value().port, _neo4j_config.value().user, _neo4j_config.value().passwd))
+            slam3d::Neo4jGrap neo4jgraph = new slam3d::Neo4jGraph>(mLogger,mStorage,neoconf);
+			mGraph = std::dynamic_cast<slam3d::Neo4jGraph*>(neo4jgraph);
+
+            if (_delete_databases.value()) {
+                neo4j->deleteDatabase();
+                redisdb->deleteDatabase();
+                std::cout << "deleted databases" << std::endl;
+            }
+        #else
+            std::cout << "Compiled without database support, exiting" << std::endl;
+            exit(1);
+        #endif
+    } else {
+        // measurements = std::make_shared<LockableClass<std::shared_ptr<slam3d::MeasurementStorage>>>(std::make_shared<slam3d::MeasurementStorage>());
+        mStorage = new slam3d::MeasurementStorage;
+		mGraph = new BoostGraph(mLogger, mStorage);
+    }
+
+
+	
 	mGraph->setSolver(mSolver);
 	mGraph->fixNext();
 
@@ -549,15 +567,6 @@ void PointcloudMapper::updateHook()
 	try
 	{
 		PointcloudMapperBase::updateHook();
-
-		
-		if (_localize_only.read(localize_only) == RTT::NewData) {
-			if (localize_only) {
-				mStorage->disable();
-			} else {
-				mStorage->enable();
-			}
-		}
 
 		// Check if we already received data and have a valid time
 		if(mCurrentTime.isNull())
