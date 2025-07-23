@@ -1,12 +1,5 @@
+
 include(slam3dTaskLib)
-
-pkg_check_modules(DATABASES slam3d_graph_neo4j slam3d_measurements_redis)
-
-if (DATABASES_FOUND)
-    add_definitions(-DUSE_DATABASES)
-    set(COMMON_CMAKE_DEPS ${COMMON_CMAKE_DEPS} slam3d::graph-neo4j slam3d::measurements-redis)
-endif()
-
 
 add_library(${SLAM3D_TASKLIB_NAME} SHARED 
     ${SLAM3D_TASKLIB_SOURCES}

@@ -18,6 +18,7 @@
 #include <pcl/io/ply_io.h>
 
 #ifdef USE_DATABASES
+	BOOST_CLASS_EXPORT_IMPLEMENT(slam3d::PointCloudMeasurement)
     #include <slam3d/graph/neo4j/Neo4jGraph.hpp>
     #include <slam3d/measurements/redis/RedisMeasurementStorage.hpp>
 #endif
@@ -25,12 +26,12 @@
 using namespace slam3d;
 
 PointcloudMapper::PointcloudMapper(std::string const& name)
-    : PointcloudMapperBase(name)
+    : PointcloudMapperBase(name), localize_only(false)
 {
 }
 
 PointcloudMapper::PointcloudMapper(std::string const& name, RTT::ExecutionEngine* engine)
-    : PointcloudMapperBase(name, engine)
+    : PointcloudMapperBase(name, engine), localize_only(false)
 {
 }
 
@@ -167,7 +168,15 @@ void PointcloudMapper::sendPointcloud(const VertexObjectList& vertices)
 
 void PointcloudMapper::handleNewScan(const VertexObject& scan)
 {
-	addScanToMap(castToPointcloud(mMapper->getGraph()->getMeasurement(scan.measurementUuid)), scan.correctedPose);
+	PointCloudMeasurement::Ptr pcm;
+	try {
+		pcm = castToPointcloud(mMapper->getGraph()->getMeasurement(scan.measurementUuid));
+	} catch(const BadMeasurementType &e) {
+		//ignore invalid clouds
+	}
+	if (pcm) {
+		addScanToMap(pcm, scan.correctedPose);
+	}
 }
 
 void PointcloudMapper::addScanToMap(PointCloudMeasurement::Ptr scan, const Transform& pose)
@@ -191,7 +200,15 @@ void PointcloudMapper::rebuildMap(const VertexObjectList& vertices)
 	boost::shared_lock<boost::shared_mutex> guard(mGraphMutex);
 	for(VertexObjectList::const_iterator v = vertices.begin(); v != vertices.end(); ++v)
 	{
-		addScanToMap(castToPointcloud(mMapper->getGraph()->getMeasurement(v->measurementUuid)), v->correctedPose);
+		PointCloudMeasurement::Ptr pcm;
+		try {
+			pcm = castToPointcloud(mMapper->getGraph()->getMeasurement(v->measurementUuid));
+		} catch(const BadMeasurementType &e) {
+			//ignore invalid clouds
+		}
+		if (pcm) {
+			addScanToMap(pcm, v->correctedPose);
+		}
 	}
 	timeval finish = mClock->now();
 	int duration = finish.tv_sec - start.tv_sec;
@@ -290,28 +307,28 @@ bool PointcloudMapper::configureHook()
 	mPclSensor->setPatchSolver(mPatchSolver);
 
 
-    if (_use_databases.value()) {
-        #ifdef USE_DATABASES
-            std::cout << "connecting neo4j: " << conf.neo4jConfig.toString() << std::endl;
-            std::cout << "connecting redis: " << conf.redisConfig.toString() << std::endl;
+    if (_database_mode.value()) {
+		#ifdef USE_DATABASES
 			
-			slam3d::RedisMeasurementStorage* redisdb = new RedisMeasurementStorage(_redis_config.value().host, _redis_config.value().port,_redis_config.value().cacheSize,_redis_config.value().useBinaryArchive);
-	        mStorage = std::dynamic_cast<slam3d::MeasurementStorage*>(redisdb);
+			std::cout << "connecting neo4j: " << _neo4j_config.value().neo4j_host << " " << _neo4j_config.value().neo4j_port << std::endl;
+			std::cout << "connecting redis: " << _redis_config.value().redis_host << " " << _redis_config.value().redis_port << std::endl;
 
+			slam3d::RedisMeasurementStorage* redisdb = new RedisMeasurementStorage(_redis_config.value().redis_host.c_str(), _redis_config.value().redis_port,_redis_config.value().cacheSize,_redis_config.value().useBinaryArchive);
+			mStorage = dynamic_cast<slam3d::MeasurementStorage*>(redisdb);
 
-			Neo4jGraph::Server neoconf (_neo4j_config.value().host, _neo4j_config.value().port, _neo4j_config.value().user, _neo4j_config.value().passwd))
-            slam3d::Neo4jGrap neo4jgraph = new slam3d::Neo4jGraph>(mLogger,mStorage,neoconf);
-			mGraph = std::dynamic_cast<slam3d::Neo4jGraph*>(neo4jgraph);
+			Neo4jConnection::ServerConfig neoconf (_neo4j_config.value().neo4j_host, _neo4j_config.value().neo4j_port, _neo4j_config.value().user, _neo4j_config.value().passwd);
+			slam3d::Neo4jGraph* neo4jgraph = new slam3d::Neo4jGraph(mLogger,mStorage,neoconf);
+			mGraph = dynamic_cast<slam3d::Graph*>(neo4jgraph);
 
-            if (_delete_databases.value()) {
-                neo4j->deleteDatabase();
-                redisdb->deleteDatabase();
-                std::cout << "deleted databases" << std::endl;
-            }
-        #else
-            std::cout << "Compiled without database support, exiting" << std::endl;
-            exit(1);
-        #endif
+			if (_delete_databases.value()) {
+				neo4jgraph->deleteDatabase();
+				redisdb->deleteDatabase();
+				std::cout << "deleted databases" << std::endl;
+			}
+		#else
+			std::cout << "Compiled without database support, exiting" << std::endl;
+			exit(1);
+		#endif
     } else {
         // measurements = std::make_shared<LockableClass<std::shared_ptr<slam3d::MeasurementStorage>>>(std::make_shared<slam3d::MeasurementStorage>());
         mStorage = new slam3d::MeasurementStorage;
@@ -567,6 +584,14 @@ void PointcloudMapper::updateHook()
 	try
 	{
 		PointcloudMapperBase::updateHook();
+		
+		if (_localize_only.read(localize_only) == RTT::NewData) {
+			if (localize_only) {
+				mStorage->disable();
+			} else {
+				mStorage->enable();
+			}
+		}
 
 		// Check if we already received data and have a valid time
 		if(mCurrentTime.isNull())

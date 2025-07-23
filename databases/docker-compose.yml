@@ -1,0 +1,45 @@
+version: '3.2'
+
+services:
+  neo4j:
+    image: neo4j:community
+    #container_name: neo4j
+    environment:
+      - NEO4J_AUTH=none
+    ports:
+       - "7474:7474"
+       - "7687:7687"
+    expose:
+       - "7687"
+       - "7474"
+
+    healthcheck:
+      test: wget http://localhost:7474 || exit 1
+      interval: 1s
+      timeout: 10s
+      retries: 20
+      start_period: 3s
+    volumes:
+      - neo4j:/data
+    tmpfs:
+      - /var/lib/neo4j/run
+
+  redis:
+    image: redis
+    command: bash -c "redis-server --save 60 1"
+    ports:
+      - "6379:6379"
+    expose:
+      - "6379"
+    
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli ping | grep PONG"]
+      interval: 1s
+      timeout: 3s
+      retries: 5
+    volumes:
+      - redis:/data
+
+volumes:
+  neo4j:
+  redis:
