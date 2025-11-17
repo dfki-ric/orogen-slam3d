@@ -11,6 +11,7 @@
 	<logo>http://</logo>
 	
 	<depend package="slam/slam3d" />
+	<depend package="slam/slam3d_databases" />
 	<depend package="drivers/orogen/transformer" />
 	<depend package="base/cmake" />
 	<depend package="base/orogen/types" />
