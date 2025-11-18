@@ -11,7 +11,6 @@
 #include <slam3d/solver/g2o/G2oSolver.hpp>
 
 #include <boost/format.hpp>
-#include <boost/thread.hpp>
 #include <boost/filesystem.hpp>
 
 #include <pcl/common/transforms.h>
@@ -54,18 +53,21 @@ bool PointcloudMapper::generate_cloud()
 {
 	// Publish accumulated cloud
 	mLogger->message(INFO, "Requested pointcloud generation.");
+	cloudThread.join();
 	VertexObjectList vertices = mGraph->getVerticesFromSensor(mPclSensor->getName());
-	boost::thread projThread(&PointcloudMapper::sendPointcloud, this, vertices);
+	cloudThread = boost::thread(&PointcloudMapper::sendPointcloud, this, vertices);
 	return true;
 }
 
 bool PointcloudMapper::generate_map()
 {
 	mLogger->message(INFO, "Requested map generation.");
+	mapThread.join();
 	if(mGraph->optimized())
 	{
+		mLogger->message(INFO, "Running map generation.");
 		VertexObjectList vertices = mGraph->getVerticesFromSensor(mPclSensor->getName());
-		boost::thread projThread(&PointcloudMapper::rebuildMap, this, vertices);
+		mapThread = boost::thread(&PointcloudMapper::rebuildMap, this, vertices);
 	}else
 	{
 		sendMap();

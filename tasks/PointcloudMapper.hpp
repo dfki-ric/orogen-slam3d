@@ -9,6 +9,7 @@
 
 #include <queue>
 #include <boost/thread/shared_mutex.hpp>
+#include <boost/thread.hpp>
 
 #include "GridConfiguration.hpp"
 
@@ -58,6 +59,9 @@ namespace slam3d
 		boost::shared_mutex mGraphMutex;
 		boost::shared_mutex mMapMutex;
 		
+		boost::thread cloudThread;
+		boost::thread mapThread;
+
 		int mScansAdded;
 		int mScansReceived; 
 		bool mForceAdd;
