@@ -53,7 +53,6 @@ bool PointcloudMapper::generate_cloud()
 {
 	// Publish accumulated cloud
 	mLogger->message(INFO, "Requested pointcloud generation.");
-	cloudThread.join();
 	VertexObjectList vertices = mGraph->getVerticesFromSensor(mPclSensor->getName());
 	std::shared_ptr<MappingTask> task = std::make_shared<MappingTask>(std::bind(&PointcloudMapper::sendPointcloud, this, std::placeholders::_1), vertices);
 	mapThread.addFunctionCall(task, true);
@@ -63,7 +62,6 @@ bool PointcloudMapper::generate_cloud()
 bool PointcloudMapper::generate_map()
 {
 	mLogger->message(INFO, "Requested map generation.");
-	mapThread.join();
 	if(mGraph->optimized())
 	{
 		mLogger->message(INFO, "Running map generation.");
