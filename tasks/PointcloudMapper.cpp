@@ -65,7 +65,7 @@ bool PointcloudMapper::generate_map()
 	if(mGraph->optimized())
 	{
 		VertexObjectList vertices = mGraph->getVerticesFromSensor(mPclSensor->getName());
-		std::shared_ptr<MappingTask> task = std::make_shared<MappingTask>(std::bind(&PointcloudMapper::sendPointcloud, this, std::placeholders::_1), vertices);
+		std::shared_ptr<MappingTask> task = std::make_shared<MappingTask>(std::bind(&PointcloudMapper::rebuildMap, this, std::placeholders::_1), vertices);
 		mapThread.addFunctionCall(task, true);
 	}else
 	{
