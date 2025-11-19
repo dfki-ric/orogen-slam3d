@@ -7,20 +7,101 @@
 
 #include <maps/grid/MLSMap.hpp>
 
-#include <queue>
+#include <deque>
 #include <boost/thread/shared_mutex.hpp>
 #include <boost/thread.hpp>
+
+#include <thread>
+#include <functional>
+#include <future>
 
 #include "GridConfiguration.hpp"
 
 namespace slam3d
 {	
 	class RockOdometry;
-	
+
 	class PointcloudMapper : public PointcloudMapperBase
 	{
 	friend class PointcloudMapperBase;
 	protected:
+
+
+		class MappingThread {
+		 public:
+			struct MappingTask {
+				MappingTask(){};
+				MappingTask(std::function<void(VertexObjectList vertices)> function, VertexObjectList vertices ):function(function),vertices(vertices) {}
+				std::function<void(VertexObjectList vertices)> function;
+				VertexObjectList vertices;
+			};
+
+			MappingThread(size_t maxQueueSize = 1):maxQueueSize(maxQueueSize) {
+				thread = std::thread([&](){
+					bool run = true;
+					while (run) {
+						MappingTask task;
+						bool has_task = false;
+						{  // locking  scope to free mutex before end of function
+							std::unique_lock<std::mutex> lock(this->queueMutex);
+							// wait for job in queue arrives
+							this->queueHasNewJob.wait(lock, [this](){
+								// predicate to check if wait can be stopped
+								// if the queue has a size or the thread should be stopped waiting ends
+								return this->queue.size() || this->stopThread;
+							});
+							if (this->stopThread) {
+								// stop the infinite while loop and proceed to let the thread stop
+								run = false;
+								return;
+							}
+							task = queue.front();
+							queue.pop_front();
+							has_task = true;
+						}
+						if (has_task) {
+							// this is intentionally not run insire locking scope of the queue
+							task.function(task.vertices);
+						}
+					}
+				});
+			}
+
+			~MappingThread(){
+				stop();
+			}
+
+			bool addTask(const MappingTask& task, const bool& replaceLatestIfFull = false) {
+				std::lock_guard<std::mutex> lock(queueMutex);
+				if (queue.size() >= maxQueueSize) {
+					if (replaceLatestIfFull) {
+						queue.pop_back();
+					}else{
+						return false;
+					}
+				}
+				queue.push_back(task);
+				queueHasNewJob.notify_one();
+				return true;
+			}
+
+			void stop() {
+				stopThread = true;
+				queueHasNewJob.notify_all();
+				thread.join();
+			}
+
+			private:
+				std::deque<MappingTask> queue;
+				std::mutex queueMutex;
+				std::condition_variable queueHasNewJob;
+
+				std::thread thread;
+				std::atomic<bool> stopThread;
+				size_t maxQueueSize;
+
+		};
+
 
 		// Operations
 		virtual bool generate_cloud();
@@ -59,8 +140,8 @@ namespace slam3d
 		boost::shared_mutex mGraphMutex;
 		boost::shared_mutex mMapMutex;
 		
-		boost::thread cloudThread;
-		boost::thread mapThread;
+		MappingThread pointcloudThread;
+		MappingThread mapThread;
 
 		int mScansAdded;
 		int mScansReceived; 

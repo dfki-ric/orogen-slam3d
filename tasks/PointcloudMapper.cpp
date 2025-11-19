@@ -55,7 +55,8 @@ bool PointcloudMapper::generate_cloud()
 	mLogger->message(INFO, "Requested pointcloud generation.");
 	cloudThread.join();
 	VertexObjectList vertices = mGraph->getVerticesFromSensor(mPclSensor->getName());
-	cloudThread = boost::thread(&PointcloudMapper::sendPointcloud, this, vertices);
+	MappingThread::MappingTask task(std::bind(&PointcloudMapper::sendPointcloud, this, std::placeholders::_1), vertices);
+	mapThread.addTask(task, true);
 	return true;
 }
 
@@ -67,7 +68,8 @@ bool PointcloudMapper::generate_map()
 	{
 		mLogger->message(INFO, "Running map generation.");
 		VertexObjectList vertices = mGraph->getVerticesFromSensor(mPclSensor->getName());
-		mapThread = boost::thread(&PointcloudMapper::rebuildMap, this, vertices);
+		MappingThread::MappingTask task(std::bind(&PointcloudMapper::rebuildMap, this, std::placeholders::_1), vertices);
+		mapThread.addTask(task, true);
 	}else
 	{
 		sendMap();
