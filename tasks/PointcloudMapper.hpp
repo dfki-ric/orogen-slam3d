@@ -8,7 +8,6 @@
 #include <maps/grid/MLSMap.hpp>
 
 #include <boost/thread/shared_mutex.hpp>
-#include <boost/thread.hpp>
 
 #include "GridConfiguration.hpp"
 #include "ThreadedFunctionQueue.hpp"
