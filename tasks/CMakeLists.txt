@@ -3,7 +3,8 @@ add_library(${SLAM3D_TASKLIB_NAME} SHARED
     ${SLAM3D_TASKLIB_SOURCES}
     BaseLogger.cpp
     RockOdometry.cpp
-    Common.cpp)
+    Common.cpp
+    ThreadedFunctionQueue.cpp)
 
 add_dependencies(${SLAM3D_TASKLIB_NAME}
     regen-typekit)
@@ -26,5 +27,6 @@ FILES
     BaseLogger.hpp
     RockOdometry.hpp
     Common.hpp
+    ThreadedFunctionQueue.hpp
 DESTINATION
     include/orocos/slam3d)

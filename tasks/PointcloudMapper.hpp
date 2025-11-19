@@ -7,19 +7,33 @@
 
 #include <maps/grid/MLSMap.hpp>
 
-#include <queue>
 #include <boost/thread/shared_mutex.hpp>
 
 #include "GridConfiguration.hpp"
+#include "ThreadedFunctionQueue.hpp"
 
 namespace slam3d
 {	
 	class RockOdometry;
-	
+
 	class PointcloudMapper : public PointcloudMapperBase
 	{
 	friend class PointcloudMapperBase;
 	protected:
+
+		class MappingTask : public ThreadedFunctionQueue::Function {
+		 public:
+			MappingTask():Function(){};
+			MappingTask(std::function<void(VertexObjectList vertices)> function, VertexObjectList vertices):Function(),function(function),vertices(vertices) {}
+			void run() override {
+				function(vertices);
+			}
+		 private:
+			std::function<void(VertexObjectList vertices)> function;
+			VertexObjectList vertices;
+		};
+
+		
 
 		// Operations
 		virtual bool generate_cloud();
@@ -58,6 +72,9 @@ namespace slam3d
 		boost::shared_mutex mGraphMutex;
 		boost::shared_mutex mMapMutex;
 		
+		ThreadedFunctionQueue pointcloudThread;
+		ThreadedFunctionQueue mapThread;
+
 		int mScansAdded;
 		int mScansReceived; 
 		bool mForceAdd;
