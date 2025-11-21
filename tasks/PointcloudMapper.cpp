@@ -20,12 +20,12 @@
 using namespace slam3d;
 
 PointcloudMapper::PointcloudMapper(std::string const& name)
-    : PointcloudMapperBase(name)
+    : PointcloudMapperBase(name), pointcloudThreadRunning(false), mapThreadRunning(false)
 {
 }
 
 PointcloudMapper::PointcloudMapper(std::string const& name, RTT::ExecutionEngine* engine)
-    : PointcloudMapperBase(name, engine)
+    : PointcloudMapperBase(name, engine), pointcloudThreadRunning(false), mapThreadRunning(false)
 {
 }
 
@@ -52,6 +52,10 @@ bool PointcloudMapper::optimize()
 
 bool PointcloudMapper::generate_cloud()
 {
+	if (pointcloudThreadRunning) {
+		return false;
+	}
+	pointcloudThreadRunning = true;
 	// Publish accumulated cloud
 	mLogger->message(INFO, "Requested pointcloud generation.");
 	VertexObjectList vertices = mGraph->getVerticesFromSensor(mPclSensor->getName());
@@ -61,6 +65,10 @@ bool PointcloudMapper::generate_cloud()
 
 bool PointcloudMapper::generate_map()
 {
+	if (mapThreadRunning) {
+		return false;
+	}
+	mapThreadRunning = true;
 	mLogger->message(INFO, "Requested map generation.");
 	if(mGraph->optimized())
 	{
@@ -158,6 +166,7 @@ void PointcloudMapper::sendPointcloud(const VertexObjectList& vertices)
 	base::samples::Pointcloud mapCloud;
 	createFromPcl(accCloud, mapCloud);
 	_cloud.write(mapCloud);
+	pointcloudThreadRunning = false;
 }
 
 void PointcloudMapper::handleNewScan(const VertexObject& scan)
@@ -193,6 +202,7 @@ void PointcloudMapper::rebuildMap(const VertexObjectList& vertices)
 	mLogger->message(INFO, (boost::format("Completely rebuild map from %1% scans in %2% seconds.") % vertices.size() % duration).str());
 
 	sendMap();
+	mapThreadRunning = false;
 }
 
 void PointcloudMapper::sendMap()

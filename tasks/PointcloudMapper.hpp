@@ -8,6 +8,7 @@
 #include <maps/grid/MLSMap.hpp>
 
 #include <queue>
+#include <atomic>
 #include <boost/thread/shared_mutex.hpp>
 
 #include "GridConfiguration.hpp"
@@ -70,6 +71,9 @@ namespace slam3d
 		// Current state of transformations
 		Eigen::Affine3d mCurrentDrift;
 		base::Time mCurrentTime;
+
+		std::atomic<bool> pointcloudThreadRunning;
+		std::atomic<bool> mapThreadRunning;
 
 	public:
 		PointcloudMapper(std::string const& name = "slam3d::PointcloudMapper");
