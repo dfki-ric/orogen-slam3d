@@ -369,6 +369,8 @@ bool PointcloudMapper::configureHook()
 	mScansAdded = 0;
 	mScansReceived = 0;
 	mForceAdd = false;
+	mMapInProgress = false;
+	mPointcloudInProgress = false;
 	
 	// Initialize MLS-Map
 	mGridConf = _grid_config.get();
