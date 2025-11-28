@@ -254,9 +254,11 @@ bool PointcloudMapper::loadPLYMap(const std::string& path)
 		PointCloudMeasurement::Ptr initial_map(new PointCloudMeasurement(pcl_cloud, _robot_name.get(), mPclSensor->getName(), pc_tr));
 		try
 		{
-			VertexObject root_node = mGraph->getVertex(0);
-			mMapper->addExternalMeasurement(initial_map, root_node.measurementUuid,
-				Transform::Identity(), Covariance<6>::Identity(), "ply-loader");
+			Constraint::Ptr se3(new SE3Constraint("ply-loader", Transform::Identity(), Covariance<6>::Identity()));
+			mGraph->fixNext();
+			IdType id = mGraph->addVertex(initial_map, Transform::Identity());
+			mPclSensor->addLinkSensor("ply-loader");
+
 			addScanToMap(initial_map, Transform::Identity());
 			return true;
 		}
@@ -423,6 +425,9 @@ bool PointcloudMapper::configureHook()
 	mMapInProgress = false;
 	mPointcloudInProgress = false;
 	
+	// Initialize current drift to identity
+	mCurrentDrift = Eigen::Affine3d::Identity();
+
 	// Initialize MLS-Map
 	mGridConf = _grid_config.get();
 	mLogger->message(INFO, " = Grid - Parameters =");
@@ -614,10 +619,25 @@ void PointcloudMapper::updateHook()
 			}
 		}
 
+		if (_localize_only.read(localize_only) == RTT::NewData) {
+			if (localize_only) {
+				mStorage->disable();
+			} else {
+				mStorage->enable();
+			}
+		}
+
 		// Check if we already received data and have a valid time
 		if(mCurrentTime.isNull())
 		{
 			mLogger->message(WARNING, "Current time is null, not sending transforms.");
+			return;
+		}
+
+		// Check if we have added at least one scan (mCurrentDrift has been computed)
+		if(mOdometry && mScansAdded == 0)
+		{
+			mLogger->message(WARNING, "No scans added yet, not sending transforms.");
 			return;
 		}
 
