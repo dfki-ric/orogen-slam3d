@@ -52,23 +52,39 @@ bool PointcloudMapper::optimize()
 
 bool PointcloudMapper::generate_cloud()
 {
-	// Publish accumulated cloud
-	mLogger->message(INFO, "Requested pointcloud generation.");
-	VertexObjectList vertices = mGraph->getVerticesFromSensor(mPclSensor->getName());
-	boost::thread projThread(&PointcloudMapper::sendPointcloud, this, vertices);
-	return true;
+	if(mPointcloudInProgress)
+	{
+		mLogger->message(WARNING, "Cloud generation already in progress.");
+		return false;
+	}else
+	{
+		// Publish accumulated cloud
+		mLogger->message(INFO, "Requested pointcloud generation.");
+		VertexObjectList vertices = mGraph->getVerticesFromSensor(mPclSensor->getName());
+		boost::thread projThread(&PointcloudMapper::sendPointcloud, this, vertices);
+		return true;
+	}
 }
 
 bool PointcloudMapper::generate_map()
 {
 	mLogger->message(INFO, "Requested map generation.");
-	if(mGraph->optimized())
+	if(mMapInProgress)
 	{
-		VertexObjectList vertices = mGraph->getVerticesFromSensor(mPclSensor->getName());
-		boost::thread projThread(&PointcloudMapper::rebuildMap, this, vertices);
+		mLogger->message(WARNING, "Map generation already in progress.");
+		return false;
 	}else
 	{
-		sendMap();
+		mMapInProgress = true;
+		if(mGraph->optimized())
+		{
+			VertexObjectList vertices = mGraph->getVerticesFromSensor(mPclSensor->getName());
+			mMapInProgress = true;
+			boost::thread projThread(&PointcloudMapper::rebuildMap, this, vertices);
+		}else
+		{
+			sendMap();
+		}
 	}
 	return true;
 }
@@ -152,12 +168,14 @@ void PointcloudMapper::sendPointcloud(const VertexObjectList& vertices)
 	}catch (boost::lock_error &e)
 	{
 		mLogger->message(ERROR, "Could not access the pose graph to build Pointcloud!");
+		mPointcloudInProgress = false;
 		return;
 	}
 	
 	base::samples::Pointcloud mapCloud;
 	createFromPcl(accCloud, mapCloud);
 	_cloud.write(mapCloud);
+	mPointcloudInProgress = false;
 }
 
 void PointcloudMapper::handleNewScan(const VertexObject& scan) {
@@ -215,6 +233,7 @@ void PointcloudMapper::sendMap()
 {
 	// Publish the MLS-Map
 	_mls.write(mMultiLayerMap);
+	mMapInProgress = false;
 	mScansReceived = 0;
 }
 
@@ -368,6 +387,8 @@ bool PointcloudMapper::configureHook()
 	mScansAdded = 0;
 	mScansReceived = 0;
 	mForceAdd = false;
+	mMapInProgress = false;
+	mPointcloudInProgress = false;
 	
 	// Initialize current drift to identity
 	mCurrentDrift = Eigen::Affine3d::Identity();
@@ -536,7 +557,7 @@ void PointcloudMapper::scanTransformerCallback(const base::Time &ts, const base:
 			}
 		}else
 		{
-			if((_map_update_rate > 0) && (mScansReceived >= _map_update_rate))
+			if((_map_update_rate > 0) && (mScansReceived >= _map_update_rate) && !mMapInProgress)
 			{
 				addScanToMap(measurement, mMapper->getCurrentPose());
 				sendMap();

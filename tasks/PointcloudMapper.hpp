@@ -57,6 +57,8 @@ namespace slam3d
 		RockOdometry* mOdometry;
 		boost::shared_mutex mGraphMutex;
 		boost::shared_mutex mMapMutex;
+		std::atomic<bool> mPointcloudInProgress;
+		std::atomic<bool> mMapInProgress;
 		
 		int mScansAdded;
 		int mScansReceived; 
