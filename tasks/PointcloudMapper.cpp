@@ -237,6 +237,7 @@ bool PointcloudMapper::loadPLYMap(const std::string& path)
 			mGraph->fixNext();
 			IdType id = mGraph->addVertex(initial_map, Transform::Identity());
 			mPclSensor->addLinkSensor("ply-loader");
+			mGraph->addConstraint(id, 0, se3);
 
 			addScanToMap(initial_map, Transform::Identity());
 			return true;
