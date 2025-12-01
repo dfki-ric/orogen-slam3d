@@ -199,6 +199,10 @@ task_context "PointcloudMapper" do
 	property('grid_mls_config', '/maps/grid/MLSConfig')
 	.doc("Multi-Layer-Surface-Map specific configuration.")
 
+	property('activate_localize_only', '/bool', false)
+	.dynamic()
+	.doc("When set to true, the mapper operates in localization-only mode and will not add new scans to the map. This can also be controlled via the localize_only input port, which will override this property value when new data is received.")
+
 	property('envire_path', '/std/string', "slam3d_envire")
 	.doc("The path where to write the serialized envire map.")
 

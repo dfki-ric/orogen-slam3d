@@ -418,6 +418,13 @@ bool PointcloudMapper::configureHook()
 		mScansAdded++;
 	}
 	
+	// Initialize localize_only mode from property
+	if (_activate_localize_only) {
+		mStorage->disable();
+	} else {
+		mStorage->enable();
+	}
+	
 	return true;
 }
 
