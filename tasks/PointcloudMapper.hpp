@@ -43,7 +43,6 @@ namespace slam3d
 		virtual void clearMap();
 		virtual void rebuildMap(const VertexObjectList& vertices);
 		virtual void sendMap();
-		bool loadPLYMap(const std::string& path);
 	
 		// Members
 		slam3d::Clock* mClock;
