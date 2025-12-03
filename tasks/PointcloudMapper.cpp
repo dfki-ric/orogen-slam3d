@@ -237,6 +237,38 @@ void PointcloudMapper::sendMap()
 	mScansReceived = 0;
 }
 
+bool PointcloudMapper::loadPLYMap(const std::string& path)
+{
+	PointCloud::Ptr pcl_cloud(new PointCloud());
+	pcl::PLYReader ply_reader;
+	if(ply_reader.read(path, *pcl_cloud) >= 0)
+	{
+		Transform pc_tr(pcl_cloud->sensor_orientation_.cast<ScalarType>());
+		pc_tr.translation() = pcl_cloud->sensor_origin_.block(0,0,3,1).cast<ScalarType>();
+		PointCloudMeasurement::Ptr initial_map(
+			new PointCloudMeasurement(pcl_cloud, _robot_name.get(), "ply-loader", pc_tr));
+		try
+		{
+			// Constraint::Ptr se3(new SE3Constraint("ply-loader", Transform::Identity(), Covariance<6>::Identity()));
+			mGraph->fixNext();
+			IdType id = mGraph->addVertex(initial_map, Transform::Identity());
+			mPclSensor->addLinkSensor("ply-loader");
+			// mGraph->addConstraint(id, 0, se3);
+
+			addScanToMap(initial_map, Transform::Identity());
+			return true;
+		}
+		catch(std::exception& e)
+		{
+			mLogger->message(ERROR, (boost::format("Adding initial point cloud failed: %1%") % e.what()).str());
+		}
+	}else
+	{
+		mLogger->message(ERROR, (boost::format("Failed to load a-priori PLY map %1%") % path).str());
+	}
+	return false;
+}
+
 bool PointcloudMapper::setLog_level(boost::int32_t value)
 {
 	switch(value)
