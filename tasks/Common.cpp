@@ -41,7 +41,8 @@ PointCloud::Ptr slam3d::createFromRockMessage(const base::samples::Pointcloud& c
 		p.x = cloud_in.points[i][0];
 		p.y = cloud_in.points[i][1];
 		p.z = cloud_in.points[i][2];
-		cloud_out->push_back(p);
+		if(std::isfinite(p.x) && std::isfinite(p.y) && std::isfinite(p.z))
+			cloud_out->push_back(p);
 	}
 	return cloud_out;
 }
