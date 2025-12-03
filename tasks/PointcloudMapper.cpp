@@ -249,11 +249,11 @@ bool PointcloudMapper::loadPLYMap(const std::string& path)
 			new PointCloudMeasurement(pcl_cloud, _robot_name.get(), "ply-loader", pc_tr));
 		try
 		{
-			Constraint::Ptr se3(new SE3Constraint("ply-loader", Transform::Identity(), Covariance<6>::Identity()));
+			// Constraint::Ptr se3(new SE3Constraint("ply-loader", Transform::Identity(), Covariance<6>::Identity()));
 			mGraph->fixNext();
 			IdType id = mGraph->addVertex(initial_map, Transform::Identity());
 			mPclSensor->addLinkSensor("ply-loader");
-			mGraph->addConstraint(id, 0, se3);
+			// mGraph->addConstraint(id, 0, se3);
 
 			addScanToMap(initial_map, Transform::Identity());
 			return true;
