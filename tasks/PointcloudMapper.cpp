@@ -99,7 +99,7 @@ bool PointcloudMapper::write_envire()
 {
 	boost::filesystem::path env_path(_envire_path.value());
 	boost::filesystem::create_directories(env_path);
-	env_path += "mls_map-";
+	env_path += "/mls_map-";
 	env_path += base::Time::now().toString(base::Time::Seconds, "%Y%m%d-%H%M");
 	env_path += ".bin";
 
