@@ -58,23 +58,39 @@ bool PointcloudMapper::optimize()
 
 bool PointcloudMapper::generate_cloud()
 {
-	// Publish accumulated cloud
-	mLogger->message(INFO, "Requested pointcloud generation.");
-	VertexObjectList vertices = mGraph->getVerticesFromSensor(mPclSensor->getName());
-	boost::thread projThread(&PointcloudMapper::sendPointcloud, this, vertices);
-	return true;
+	if(mPointcloudInProgress)
+	{
+		mLogger->message(WARNING, "Cloud generation already in progress.");
+		return false;
+	}else
+	{
+		// Publish accumulated cloud
+		mLogger->message(INFO, "Requested pointcloud generation.");
+		VertexObjectList vertices = mGraph->getVerticesFromSensor(mPclSensor->getName());
+		boost::thread projThread(&PointcloudMapper::sendPointcloud, this, vertices);
+		return true;
+	}
 }
 
 bool PointcloudMapper::generate_map()
 {
 	mLogger->message(INFO, "Requested map generation.");
-	if(mGraph->optimized())
+	if(mMapInProgress)
 	{
-		VertexObjectList vertices = mGraph->getVerticesFromSensor(mPclSensor->getName());
-		boost::thread projThread(&PointcloudMapper::rebuildMap, this, vertices);
+		mLogger->message(WARNING, "Map generation already in progress.");
+		return false;
 	}else
 	{
-		sendMap();
+		mMapInProgress = true;
+		if(mGraph->optimized())
+		{
+			VertexObjectList vertices = mGraph->getVerticesFromSensor(mPclSensor->getName());
+			mMapInProgress = true;
+			boost::thread projThread(&PointcloudMapper::rebuildMap, this, vertices);
+		}else
+		{
+			sendMap();
+		}
 	}
 	return true;
 }
@@ -158,12 +174,14 @@ void PointcloudMapper::sendPointcloud(const VertexObjectList& vertices)
 	}catch (boost::lock_error &e)
 	{
 		mLogger->message(ERROR, "Could not access the pose graph to build Pointcloud!");
+		mPointcloudInProgress = false;
 		return;
 	}
 	
 	base::samples::Pointcloud mapCloud;
 	createFromPcl(accCloud, mapCloud);
 	_cloud.write(mapCloud);
+	mPointcloudInProgress = false;
 }
 
 void PointcloudMapper::handleNewScan(const VertexObject& scan)
@@ -221,35 +239,8 @@ void PointcloudMapper::sendMap()
 {
 	// Publish the MLS-Map
 	_mls.write(mMultiLayerMap);
+	mMapInProgress = false;
 	mScansReceived = 0;
-}
-
-bool PointcloudMapper::loadPLYMap(const std::string& path)
-{
-	PointCloud::Ptr pcl_cloud(new PointCloud());
-	pcl::PLYReader ply_reader;
-	if(ply_reader.read(path, *pcl_cloud) >= 0)
-	{
-		Transform pc_tr(pcl_cloud->sensor_orientation_.cast<ScalarType>());
-		pc_tr.translation() = pcl_cloud->sensor_origin_.block(0,0,3,1).cast<ScalarType>();
-		PointCloudMeasurement::Ptr initial_map(new PointCloudMeasurement(pcl_cloud, _robot_name.get(), mPclSensor->getName(), pc_tr));
-		try
-		{
-			VertexObject root_node = mGraph->getVertex(0);
-			mMapper->addExternalMeasurement(initial_map, root_node.measurementUuid,
-				Transform::Identity(), Covariance<6>::Identity(), "ply-loader");
-			addScanToMap(initial_map, Transform::Identity());
-			return true;
-		}
-		catch(std::exception& e)
-		{
-			mLogger->message(ERROR, (boost::format("Adding initial point cloud failed: %1%") % e.what()).str());
-		}
-	}else
-	{
-		mLogger->message(ERROR, (boost::format("Failed to load a-priori PLY map %1%") % path).str());
-	}
-	return false;
 }
 
 bool PointcloudMapper::setLog_level(boost::int32_t value)
@@ -338,7 +329,7 @@ bool PointcloudMapper::configureHook()
 
 	
 	mGraph->setSolver(mSolver);
-	mGraph->fixNext();
+	
 
 	Transform startPose;
 	if(_use_odometry_heading || _use_odometry_pose)
@@ -354,6 +345,7 @@ bool PointcloudMapper::configureHook()
 
 	mMapper = new Mapper(mGraph, mLogger, startPose);
 	mMapper->registerSensor(mPclSensor);
+	mMapper->fixFirst();
 
 	// Read and set parameters
 	mLogger->message(INFO, "=== PointCloudSensor - Parameters ===");
@@ -401,7 +393,12 @@ bool PointcloudMapper::configureHook()
 	mScansAdded = 0;
 	mScansReceived = 0;
 	mForceAdd = false;
+	mMapInProgress = false;
+	mPointcloudInProgress = false;
 	
+	// Initialize current drift to identity
+	mCurrentDrift = Eigen::Affine3d::Identity();
+
 	// Initialize MLS-Map
 	mGridConf = _grid_config.get();
 	mLogger->message(INFO, " = Grid - Parameters =");
@@ -421,9 +418,21 @@ bool PointcloudMapper::configureHook()
 	mMultiLayerMap.translate(Eigen::Vector3d(mGridConf.min_x, mGridConf.min_y, 0));
 
 	// load a-priori map file
-	if(!_apriori_ply_map.value().empty() && loadPLYMap(_apriori_ply_map.value()))
+	if(!_apriori_ply_map.value().empty())
 	{
+		mPclSensor->loadPLY(_apriori_ply_map.value(), _robot_name.value());
 		mScansAdded++;
+		const VertexObject& ply_vertex = mGraph->getVertex(mPclSensor->getLastVertexId());
+		addScanToMap(castToPointcloud(
+			mStorage->get(ply_vertex.measurementUuid)),
+			ply_vertex.correctedPose);
+	}
+	
+	// Initialize localize_only mode from property
+	if (_activate_localize_only) {
+		mStorage->disable();
+	} else {
+		mStorage->enable();
 	}
 	
 	return true;
@@ -566,7 +575,7 @@ void PointcloudMapper::scanTransformerCallback(const base::Time &ts, const base:
 			}
 		}else
 		{
-			if((_map_update_rate > 0) && (mScansReceived >= _map_update_rate))
+			if((_map_update_rate > 0) && (mScansReceived >= _map_update_rate) && !mMapInProgress)
 			{
 				addScanToMap(measurement, mMapper->getCurrentPose());
 				sendMap();
@@ -593,10 +602,25 @@ void PointcloudMapper::updateHook()
 			}
 		}
 
+		if (_localize_only.read(localize_only) == RTT::NewData) {
+			if (localize_only) {
+				mStorage->disable();
+			} else {
+				mStorage->enable();
+			}
+		}
+
 		// Check if we already received data and have a valid time
 		if(mCurrentTime.isNull())
 		{
 			mLogger->message(WARNING, "Current time is null, not sending transforms.");
+			return;
+		}
+
+		// Check if we have added at least one scan (mCurrentDrift has been computed)
+		if(mOdometry && mScansAdded == 0)
+		{
+			mLogger->message(WARNING, "No scans added yet, not sending transforms.");
 			return;
 		}
 

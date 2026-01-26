@@ -202,6 +202,10 @@ task_context "PointcloudMapper" do
 	property('grid_mls_config', '/maps/grid/MLSConfig')
 	.doc("Multi-Layer-Surface-Map specific configuration.")
 
+	property('activate_localize_only', '/bool', false)
+	.dynamic()
+	.doc("When set to true, the mapper operates in localization-only mode and will not add new scans to the map. This can also be controlled via the localize_only input port, which will override this property value when new data is received.")
+
 	property('envire_path', '/std/string', "slam3d_envire")
 	.doc("The path where to write the serialized envire map.")
 
@@ -274,5 +278,36 @@ end
 task_context "LineScanConverter" do
 	input_port 'scan', '/base/samples/LaserScan'
 	output_port 'cloud', '/base/samples/Pointcloud'
-	port_driven 'scan'
+	port_driven 'scan'	
+end 
+
+## Convert Pointcloud to LaserScan
+# property names are adopted from ROS's pointcloud_to_laserscan package
+task_context "PointcloudToLaserScan" do
+	input_port 'pointcloud', '/base/samples/Pointcloud'
+	output_port 'scan', '/base/samples/LaserScan'
+	output_port 'debug_cropped_cloud', '/base/samples/Pointcloud'
+	port_driven 'pointcloud'
+
+	property('min_height', '/double', -1)
+	.doc("Remove all points below this height[m]")
+
+	property('max_height', '/double', 1)
+	.doc("Remove all points above this height[m]")
+
+	property('range_min', '/double', 0.5)
+	 .doc("Remove all points within this radius of the sensor[m]")
+
+	property('range_max', '/double', 10)
+	 .doc("Remove all points beyond this radius of the sensor[m]")
+
+	property('angle_min', '/double', -3.14)
+	 .doc("Minimum angle of the resulting scan.[rad]")
+
+	property('angle_max', '/double', 3.14)
+	 .doc("Maximum angle of the resulting scan.[rad]")				
+
+	property('angle_increment', '/double', 0.01)
+	 .doc("Angle increment of the resulting scan.[rad]")
+
 end

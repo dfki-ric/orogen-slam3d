@@ -43,7 +43,6 @@ namespace slam3d
 		virtual void clearMap();
 		virtual void rebuildMap(const VertexObjectList& vertices);
 		virtual void sendMap();
-		bool loadPLYMap(const std::string& path);
 	
 		// Members
 		slam3d::Clock* mClock;
@@ -57,6 +56,8 @@ namespace slam3d
 		RockOdometry* mOdometry;
 		boost::shared_mutex mGraphMutex;
 		boost::shared_mutex mMapMutex;
+		std::atomic<bool> mPointcloudInProgress;
+		std::atomic<bool> mMapInProgress;
 		
 		int mScansAdded;
 		int mScansReceived; 
