@@ -220,7 +220,11 @@ task_context "PointcloudMapper" do
 	navigation right after adding the first scan to the map.")
 
 	property('database_mode', '/bool', false)
+	.doc("use running instances of neo4j and redis databased to store the 
+	graph and measurements. You can use the docker/docker_compose.yml file to run them")
+
 	property('delete_databases', '/bool', false)
+	.doc("delete existing graph and measuremetns on configure")
 
 	property('neo4j_config', 'slam3d/Neo4jConfig')
 	property('redis_config', 'slam3d/RedisConfig')

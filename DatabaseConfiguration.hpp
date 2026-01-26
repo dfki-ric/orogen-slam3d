@@ -22,7 +22,7 @@ namespace slam3d
         std::string redis_host;
         int redis_port;
         size_t cacheSize;
-        bool useBinaryArchive;
+        bool useBinaryArchive;  // binary boost serialartion is not portable to other systems, but faster
     };
 }
 
