@@ -60,7 +60,7 @@ bool PointcloudMapper::generate_cloud()
 	{
 		// Publish accumulated cloud
 		mLogger->message(INFO, "Requested pointcloud generation.");
-		VertexObjectList vertices = mGraph->getVerticesFromSensor(mPclSensor->getName());
+		VertexObjectList vertices = mGraph->getVertices({mPclSensor->getName()});
 		boost::thread projThread(&PointcloudMapper::sendPointcloud, this, vertices);
 		return true;
 	}
@@ -78,7 +78,7 @@ bool PointcloudMapper::generate_map()
 		mMapInProgress = true;
 		if(mGraph->optimized())
 		{
-			VertexObjectList vertices = mGraph->getVerticesFromSensor(mPclSensor->getName());
+			VertexObjectList vertices = mGraph->getVertices({mPclSensor->getName()});
 			mMapInProgress = true;
 			boost::thread projThread(&PointcloudMapper::rebuildMap, this, vertices);
 		}else
@@ -126,7 +126,7 @@ bool PointcloudMapper::write_graph()
 bool PointcloudMapper::write_ply(const std::string& folder)
 {
 	mLogger->message(INFO, "Write pointcloud to PLY file.");
-	VertexObjectList vertices = mGraph->getVerticesFromSensor(mPclSensor->getName());
+	VertexObjectList vertices = mGraph->getVertices({mPclSensor->getName()});
 	PointCloud::Ptr accCloud;
 	try
 	{
