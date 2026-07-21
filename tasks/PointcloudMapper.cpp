@@ -180,14 +180,17 @@ void PointcloudMapper::sendPointcloud(const VertexObjectList& vertices)
 
 void PointcloudMapper::handleNewScan(const VertexObject& scan)
 {
-	addScanToMap(castToPointcloud(mMapper->getGraph()->getMeasurement(scan.measurementUuid)), scan.correctedPose);
+	addScanToMap(
+		castToPointcloud(mMapper->getMeasurement(scan.measurement.uniqueId)),
+		scan.measurement,
+		scan.correctedPose);
 }
 
-void PointcloudMapper::addScanToMap(PointCloudMeasurement::Ptr scan, const Transform& pose)
+void PointcloudMapper::addScanToMap(PointCloudMeasurement::Ptr scan, const MetaData& data, const Transform& pose)
 {	
 	PointCloud::ConstPtr pcl = scan->getPointCloud();
 	boost::unique_lock<boost::shared_mutex> guard(mMapMutex);
-	mMultiLayerMap.mergePointCloud(*pcl, pose * scan->getSensorPose());
+	mMultiLayerMap.mergePointCloud(*pcl, pose * data.sensorPose);
 }
 
 void PointcloudMapper::clearMap()
@@ -204,7 +207,7 @@ void PointcloudMapper::rebuildMap(const VertexObjectList& vertices)
 	boost::shared_lock<boost::shared_mutex> guard(mGraphMutex);
 	for(VertexObjectList::const_iterator v = vertices.begin(); v != vertices.end(); ++v)
 	{
-		addScanToMap(castToPointcloud(mMapper->getGraph()->getMeasurement(v->measurementUuid)), v->correctedPose);
+		addScanToMap(castToPointcloud(mMapper->getMeasurement(v->measurement.uniqueId)), v->measurement, v->correctedPose);
 	}
 	timeval finish = mClock->now();
 	int duration = finish.tv_sec - start.tv_sec;
@@ -276,7 +279,7 @@ bool PointcloudMapper::configureHook()
 
 	mStorage = new MeasurementStorage;
 
-	mGraph = new BoostGraph(mLogger, mStorage);
+	mGraph = new BoostGraph(mLogger);
 	mGraph->setSolver(mSolver);
 	mGraph->fixNext();
 
@@ -292,7 +295,7 @@ bool PointcloudMapper::configureHook()
 		mStartPoseInitialized = true;
 	}
 
-	mMapper = new Mapper(mGraph, mLogger, startPose);
+	mMapper = new Mapper(mGraph, mStorage, mLogger, startPose);
 	mMapper->registerSensor(mPclSensor);
 
 	// Read and set parameters
@@ -368,8 +371,9 @@ bool PointcloudMapper::configureHook()
 		mPclSensor->loadPLY(_apriori_ply_map.value(), _robot_name.value());
 		mScansAdded++;
 		const VertexObject& ply_vertex = mGraph->getVertex(mPclSensor->getLastVertexId());
-		addScanToMap(castToPointcloud(
-			mStorage->get(ply_vertex.measurementUuid)),
+		addScanToMap(
+			castToPointcloud(mStorage->get(ply_vertex.measurement.uniqueId)),
+			ply_vertex.measurement,
 			ply_vertex.correctedPose);
 	}
 	
@@ -473,25 +477,31 @@ void PointcloudMapper::scanTransformerCallback(const base::Time &ts, const base:
 		{
 			PointCloud::Ptr downsampled_cloud = mPclSensor->downsample(cloud, _scan_resolution);
 			mLogger->message(DEBUG, (boost::format("Downsampled cloud has %1% points.") % downsampled_cloud->size()).str());
-			measurement = PointCloudMeasurement::Ptr(new PointCloudMeasurement(downsampled_cloud, _robot_name.get(), mPclSensor->getName(), laserPose));
+			measurement = boost::make_shared<PointCloudMeasurement>(downsampled_cloud);
 		}else
 		{
-			measurement = PointCloudMeasurement::Ptr(new PointCloudMeasurement(cloud, _robot_name.get(), mPclSensor->getName(), laserPose));
+			measurement = boost::make_shared<PointCloudMeasurement>(cloud);
 		}
 		
 		mScansReceived++;
+		MetaData meta = initMetaData(
+			measurement->getTimestamp(),
+			measurement->getTypeName(),
+			_robot_name.get(),
+			mPclSensor->getName(),
+			laserPose);
 
 		bool added = false;
 		if(mOdometry)
 		{
-			added = mPclSensor->addMeasurement(measurement, mOdometry->getPose(measurement->getTimestamp()));
+			added = mPclSensor->addMeasurement(measurement, meta, mOdometry->getPose(measurement->getTimestamp()));
 			if(added)
 			{
 				mCurrentDrift = orthogonalize(mMapper->getCurrentPose() * mOdometry->getPose(measurement->getTimestamp()).inverse());
 			}
 		}else
 		{
-			added = mPclSensor->addMeasurement(measurement);
+			added = mPclSensor->addMeasurement(measurement, meta);
 		}
 
 		if(added)
@@ -515,7 +525,7 @@ void PointcloudMapper::scanTransformerCallback(const base::Time &ts, const base:
 		{
 			if((_map_update_rate > 0) && (mScansReceived >= _map_update_rate) && !mMapInProgress)
 			{
-				addScanToMap(measurement, mMapper->getCurrentPose());
+				addScanToMap(measurement, meta, mMapper->getCurrentPose());
 				sendMap();
 			}
 		}

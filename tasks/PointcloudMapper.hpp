@@ -7,7 +7,6 @@
 
 #include <maps/grid/MLSMap.hpp>
 
-#include <queue>
 #include <boost/thread/shared_mutex.hpp>
 
 #include "GridConfiguration.hpp"
@@ -39,7 +38,7 @@ namespace slam3d
 		PointCloud::Ptr buildPointcloud(const VertexObjectList& vertices);
 		void sendPointcloud(const VertexObjectList& vertices);
 		virtual void handleNewScan(const VertexObject& scan);
-		virtual void addScanToMap(PointCloudMeasurement::Ptr scan, const Transform& pose);
+		virtual void addScanToMap(PointCloudMeasurement::Ptr scan, const MetaData& data, const Transform& pose);
 		virtual void clearMap();
 		virtual void rebuildMap(const VertexObjectList& vertices);
 		virtual void sendMap();
